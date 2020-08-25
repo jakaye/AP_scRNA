@@ -1,0 +1,690 @@
+---
+title: "Area Postrema Cell Types"
+author: "Judith Kaye"
+date: "June 3, 2020"
+output: 
+  html_document:
+    code_folding: hide
+    number_sections: false
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+      number_sections: false
+---
+```{r, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+```{r, include = FALSE}
+library(Seurat)
+library(dplyr)
+library(Matrix)
+library(biomaRt)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(stringr)
+library(sctransform)
+library(ggplot2)
+library(RColorBrewer)
+library(cowplot)
+library(reshape2)
+library(stringi)
+library(gplots)
+```
+
+# Intro
+
+Data here is from the study "Area postrema cell types that mediate nausea-associated behaviors"
+
+Chuchu Zhang, Judith A. Kaye, Zerong Cai, Sara L. Prescott, and Stephen D. Liberles 
+
+This markdown file was made to explain how we decided to process single-nuclei RNA sequencing data. 
+
+## Abstract 
+
+Area postrema sensory neurons mediate nausea, vomiting, and aversion to visceral poisons. We built an area postrema cell atlas through single-nucleus RNA sequencing, revealing four excitatory and three inhibitory neuron subtypes. Excitatory neurons express numerous receptors, including glucagon-like peptide 1 receptor (GLP1R) and calcium-sensing receptor, mainstay clinical targets for diabetes and hyperparathyroidism that also induce nausea, and GFRAL (GDF15 receptor). cAMP imaging revealed direct responses to receptor agonists, and area postrema-targeted GLP1R knockout/rescue altered flavor aversion conditioned to exendin-4, with other GLP1R neurons suppressing appetite. Optogenetics/chemogenetics revealed multiple area postrema neurons that produce aversive teaching signals and/or real-time avoidance. Ablating GLP1R neurons eliminated aversion to lithium chloride, lipopolysaccharide, and cinacalcet. Anatomical mapping revealed major long-range excitatory but not inhibitory projections, and subtype-specific parabrachial nucleus innervation. These studies reveal basic features of area postrema organization, with multiple signals of visceral malaise funneled through individual neurons to evoke complex nausea-associated behaviors.
+
+# zUMIs 
+
+Libraries, AP1 and AP2, are generated from single nuclei obtained from disection and dissociation of the Area Postreama. These nuclei were encapsulated on an InDrop platform and aligned usng zUMIs 2.8.0 (see YAML for full paremeters).
+
+https://academic.oup.com/gigascience/article/7/6/giy059/5005022
+https://github.com/sdparekh/zUMIs
+
+
+## Yaml
+project: AP2_zUMI2_auto.gl.gh.prl.pro
+
+sequence_files:
+  file1:
+    name: /n/scratch2/jk386/AP_revisit/AP2_all_R1.fastq.gz
+    base_definition:
+        - cDNA(1-61)
+  file2:
+    name: /n/scratch2/jk386/AP_revisit/AP2_all_R2.fastq.gz
+    base_definition:
+        - BC(1-8)
+  file3:
+    name: /n/scratch2/jk386/AP_revisit/AP2_all_R3.fastq.gz
+    base_definition:
+        - UMI(9-14)
+        - BC(1-8)
+  file4:
+    name: /n/scratch2/jk386/AP_revisit/AP2_all_I1.fastq.gz
+    base_definition:
+        - BC(1-8)
+reference:
+  STAR_index: /n/scratch2/jk386/chuchu/star/index_noGTF
+  GTF_file: /n/scratch2/jk386/chuchu/star/Mus_musculus.GRCm38.GT.gl.gh.prl.pro.91.gtf
+  exon_extension: no #extend exons by a certain width?
+  extension_length: 0 #number of bp to extend exons by
+  scaffold_length_min: 0 #minimal scaffold/chromosome length to consider (0 = all)
+  additional_STAR_params:
+  additional_files:
+
+out_dir: /n/scratch2/jk386/zUMIupdate/AP2out_auto
+
+num_threads: 20
+mem_limit: 64
+
+filter_cutoffs:
+  BC_filter:
+    num_bases: 4
+    phred: 17
+  UMI_filter:
+    num_bases: 2
+    phred: 17
+
+barcodes:
+  barcode_num: 3000
+  barcode_file: null
+  barcode_sharing: null
+  automatic: yes
+  BarcodeBinning: 0
+  nReadsperCell: 700
+  demultiplex: no
+
+counting_opts:
+  introns: yes
+  intronProb: yes #perform an estimation of how likely intronic reads are to be derived from mRNA by comparing to intergenic counts.
+  downsampling: 0
+  strand: 0
+  Ham_Dist: 0
+
+
+# Load Data
+```{r load}
+
+setwd("D:/scRNA/AP/zUMI_2_bc")
+ap1.rds <- readRDS("AP1_zUMI2.gl.gh.prl.pro.dgecounts.rds")
+ap2.rds <- readRDS("AP2_zUMI2.gl.gh.prl.pro.dgecounts.rds")
+ap1.mat <- as.matrix(ap1.rds$umicount$inex$all)
+ap2.mat <- as.matrix(ap2.rds$umicount$inex$all)
+
+```
+
+zUMIs provides tables with reads and UMI count information. We used matrix using counts from introns and exons. These tables are labeled with ENSEMBL IDs so we switch to Symbols where possible. 
+
+```{r ID_to_Symbol}
+ap1.ensembl<-rownames(ap1.mat)
+ap1.sym<-bitr(ap1.ensembl, fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = "org.Mm.eg.db", drop = FALSE)
+
+ap1.sym$gene<-ap1.sym$ENSEMBL
+ap1.na <- is.na(ap1.sym$SYMBOL)
+ap1.sym$SYMBOL[ap1.na]<-ap1.sym$ENSEMBL[ap1.na]
+
+dups<-duplicated(ap1.sym$ENSEMBL)
+ap1.sym$dups <- dups
+ap1.genes<-ap1.sym$SYMBOL[ap1.sym$dups == FALSE]
+rownames(ap1.mat)<-ap1.genes
+
+ap2.ensembl<-rownames(ap2.mat)
+ap2.sym<-bitr(ap2.ensembl,fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = "org.Mm.eg.db", drop = FALSE)
+dups2<-duplicated(ap2.sym$ENSEMBL)
+
+ap2.sym$gene<-ap2.sym$ENSEMBL
+ap2.na <- is.na(ap2.sym$SYMBOL)
+ap2.sym$SYMBOL[ap2.na]<-ap2.sym$ENSEMBL[ap2.na]
+
+ap2.sym$dups <- dups2
+ap2.genes<-ap2.sym$SYMBOL[ap2.sym$dups == FALSE]
+rownames(ap2.mat)<-ap2.genes
+```
+
+Next, we create a Seurat object with the modified matrix.
+
+```{r CreateSeurat}
+ap1 <- CreateSeuratObject(ap1.mat, project = "AP1zUMI_2")
+ap2 <- CreateSeuratObject(ap2.mat, project = "AP2zUMI_2")
+apz2 <- merge(ap1, ap2, project = "AP_zUMI_2")
+```
+
+## Add Metadata
+
+Computed information describing a droplet's expression of mitochondrial genes, glial genes, and neural genes will be added as metadata. We will also include information on reads and complexity (genes/reads). 
+
+Glia genes were taken from https://www.labome.com/method/Glial-Cell-Markers.html
+
+`glia.genes <- c("Kcnip3", "Rax", "Olig2", "Plp1", "Pmp22", "Mpzl1", "Aqp4", "Pdgfra", "Vim", "Hopx", "Slc1a2", "Sox10", "Gfap")`
+
+Neurons
+
+`neuro.genes <- c("Snap25", "Syp", "Rbfox3", "Mapt", "Tubb3", "Map2", "Nefl", "Nefm", "Nefh", "Dlg4")`
+
+Mitochondrial
+
+`mito.genes <- c("ND1", "ND2", "COX1", "COX2", "ATP6", "COX3", "ND3", "ND4", "ND5", "ND6", "CYTB", "ND4L")`
+
+```{r metadata}
+ap.genes <- rownames(apz2)
+
+#Reads
+reads <- c(colSums(ap1.rds$readcount$inex$all),colSums(ap2.rds$readcount$inex$all))
+apz2 <- AddMetaData(object = apz2, metadata = reads, col.name = "reads")
+
+#Complexity - genes/read
+apz2 <- AddMetaData(apz2, apz2@meta.data$nFeature_RNA/apz2@meta.data$reads, col.name = "complexity")
+
+#Mitochondria
+mito.genes <- c("ND1", "ND2", "COX1", "COX2", "ATP6", "COX3", "ND3", "ND4", "ND5", "ND6", "CYTB", "ND4L")
+percent.mito <- Matrix::colSums(apz2@assays$RNA@counts[c(mito.genes), ])/Matrix::colSums(apz2@assays$RNA@counts)
+apz2 <- AddMetaData(object = apz2, metadata = percent.mito, col.name = "percent.mito")
+
+#Glia
+glia.genes <- c("Kcnip3", "Rax", "Olig2", "Plp1", "Pmp22", "Mpzl1", "Aqp4", "Pdgfra", "Vim", "Hopx", "Slc1a2", "Sox10", "Gfap")
+percent.glia <- Matrix::colSums(apz2@assays$RNA@counts[c(glia.genes), ])/Matrix::colSums(apz2@assays$RNA@counts)
+apz2 <- AddMetaData(object = apz2, metadata = percent.glia, col.name = "percent.glia")
+
+#Neurons
+neuro.genes <- c("Snap25", "Syp", "Rbfox3", "Mapt", "Tubb3", "Map2", "Nefl", "Nefm", "Nefh", "Dlg4")
+percent.neuro <- Matrix::colSums(apz2@assays$RNA@counts[c(neuro.genes), ])/Matrix::colSums(apz2@assays$RNA@counts)
+apz2 <- AddMetaData(object = apz2, metadata = percent.neuro, col.name = "percent.neuro")
+  
+VlnPlot(apz2, features = c("nCount_RNA", "nFeature_RNA", "reads", "complexity"), ncol = 4, group.by = "orig.ident")
+VlnPlot(apz2, features = c("percent.mito", "percent.glia", "percent.neuro"), ncol = 4, group.by = "orig.ident")
+```
+
+# Filter 
+
+First we will filter based on barcode quality and then on quality of the remaining nuclei. 
+
+## Barcodes - whitelist
+
+Every droplet has a unique 16 base barcode plus a library bc of another 8 bases. The sequencer can read a 'G' when no sequence is detected. Thus poly 'G' reads can be problematic. 
+
+Also, InDrops has a published list of sequences used for their barcodes. https://github.com/indrops/indrops/issues/32
+
+The library bc for AP1 is `AGAGGATA` and AP2 is `TATGCAGT`. By auto detection, zUMIs counts 3152 and 3400 nuclei for AP1 and AP2 respectively. Data processed here is by forcing zUMIs to look for 3000 cells per library to account for potential sequencing errors with barcodes. 
+
+Barcodes not belonging to the whitelist should not be expected and poly-G barcodes can also be a source of poor quality cells. Here I will filter for InDrops compatible barcodes and poly-G reads.
+
+```{r}
+#bc_whitelist is a pairwise combination of the list below
+bc.list <- c('AAACAAAC', 'AAACACGG', 'AAACACTA', 'AAACCGCC', 'AAACGATC', 'AAACGTGA', 'AAACTACA', 'AAACTGTG', 'AAAGAAAG', 'AAAGAGGC', 'AAAGCCCG', 'AAAGTCAT', 'AAATAGCA', 'AAATTCCG', 'AACAAATG', 'AACAGAAC', 'AACAGCGG', 'AACGATTT', 'AACGCCAA', 'AACGGTAG', 'AACGTTAC', 'AACTCAGT', 'AACTGCCT', 'AAGAACAG', 'AAGAAGGT', 'AAGAGTAT', 'AAGCCTTC', 'AAGCTCCT', 'AAGGATGA', 'AAGGCGCT', 'AAGGGACC', 'AAGTATTG', 'AAGTCCAA', 'AAGTCGGG', 'AAGTGAGA', 'AAGTTGTC', 'AATAAGGA', 'AATACATC', 'AATATGAC', 'AATCCGGC', 'AATCGAAG', 'AATCGTTC', 'AATGGCGT', 'AATGTATG', 'ACAAAGAT', 'ACAAGTAG', 'ACAATCTT', 'ACACCAAG', 'ACAGATAA', 'ACAGGCCA', 'ACATCTCG', 'ACATGGAC', 'ACCAACCC', 'ACCAAGGG', 'ACCACAGA', 'ACCAGTTT', 'ACCCATGC', 'ACCCGATT', 'ACCCTCAA', 'ACCGTCGA', 'ACCTGAAG', 'ACCTTCCC', 'ACGAATTC', 'ACGACGAC', 'ACGCTTAA', 'ACGGAGCA', 'ACGGCAGT', 'ACGGGTTA', 'ACGGTTGG', 'ACGTAAAC', 'ACTAATTG', 'ACTACCCG', 'ACTAGAGC', 'ACTCATAC', 'ACTCGGAA', 'ACTGCTGG', 'ACTGGTCA', 'ACTTCGCT', 'AGAAACCA', 'AGAAAGTG', 'AGAAGCTT', 'AGAATCAA', 'AGACCTCA', 'AGACGAGG', 'AGAGAGAC', 'AGAGGTGC', 'AGCAACGC', 'AGCACGTA', 'AGCATGCC', 'AGCCATCT', 'AGCGTGGT', 'AGCTCCAC', 'AGCTTCGA', 'AGGACACA', 'AGGAGTCG', 'AGGCAATA', 'AGGCCGAA', 'AGGCGTTT', 'AGGGACTG', 'AGGGTAAA', 'AGGTAAGC', 'AGGTATAT', 'AGGTTCCC', 'AGTAATGG', 'AGTAGTTA', 'AGTCACAA', 'AGTCCGTG', 'AGTGCTTC', 'AGTTGAAC', 'AGTTGCGG', 'AGTTTGTA', 'ATAACAGG', 'ATAAGCTA', 'ATACACCC', 'ATACTCTC', 'ATAGATGT', 'ATATGCAA', 'ATATGGGT', 'ATCAATCG', 'ATCAGGGA', 'ATCCCACC', 'ATCCGCAT', 'ATCCTAGT', 'ATCGCGCT', 'ATCGTAAC', 'ATCTTGGC', 'ATGACAAC', 'ATGACTTG', 'ATGCATAT', 'ATGCGGAG', 'ATGGGCTC', 'ATGGTCTG', 'ATGTGCCG', 'ATTACCTT', 'ATTATTCG', 'ATTCTGAG', 'ATTGAAGT', 'ATTGGCCC', 'ATTTCCAT', 'ATTTGTTG', 'CAAACATT', 'CAACGCAG', 'CAAGGAAT', 'CAAGGGTT', 'CAAGGTAC', 'CAATCTAG', 'CAATTCTC', 'CACAACCT', 'CACAAGTA', 'CACTAACC', 'CACTTGAT', 'CAGACTCG', 'CAGATGGG', 'CAGGTTGC', 'CAGTTTAA', 'CATGACGA', 'CATGCTGC', 'CATTCATT', 'CATTCGGG', 'CATTTCTA', 'CCACCTCT', 'CCACGTTG', 'CCAGACAG', 'CCAGCGAA', 'CCATATGA', 'CCATCCAC', 'CCATCGTC', 'CCATGCAT', 'CCCGTAAG', 'CCCGTTCT', 'CCCTCTTG', 'CCCTGTTT', 'CCCTTGCA', 'CCGACTTT', 'CCGAGATC', 'CCGATACG', 'CCGGAAAT', 'CCGTAGCT', 'CCGTCTTA', 'CCTACGCT', 'CCTATTTA', 'CCTCATGA', 'CCTTTACA', 'CCTTTGTC', 'CGAAACTC', 'CGAACCGA', 'CGAAGAAG', 'CGACATTT', 'CGAGGCTA', 'CGATCCAA', 'CGATGGCA', 'CGGACTAA', 'CGGCTGTA', 'CGGTGAGT', 'CGTACCGA', 'CGTCGAAT', 'CGTGCAAC', 'CGTGGGAT', 'CGTGTACA', 'CGTGTGTT')
+
+bc.list <- c(bc.list, 'CGTTGCCT', 'CGTTTCGT', 'CTAACGCC', 'CTACGGGA', 'CTAGACTA', 'CTAGCACG', 'CTAGTAGG', 'CTCAAACA', 'CTCACATC', 'CTCCCAAA', 'CTCCTCCA', 'CTCGGTGA', 'CTCTATAG', 'CTCTGCGT', 'CTGAAGGG', 'CTGAGCGT', 'CTGCGATG', 'CTGCTAGA', 'CTGGAACA', 'CTGGGTAT', 'CTGTCGCA', 'CTGTGACC', 'CTGTTAAA', 'CTGTTGTG', 'CTGTTTCC', 'CTTAGGCC', 'CTTAGTGT', 'CTTCTACG', 'CTTTATCC', 'CTTTCACT', 'CTTTGGAC', 'GAAAGACA', 'GAAATACG', 'GAAGATAT', 'GAATCCCA', 'GAATGCGC', 'GACACAAA', 'GACACCTG', 'GACTAGCG', 'GAGAAACC', 'GAGCGGAA', 'GAGGAGTG', 'GAGGGTCA', 'GAGTGTAC', 'GATACGCA', 'GATGCAGA', 'GATGGTTA', 'GATGTGGC', 'GATTAAAG', 'GATTACTT', 'GATTGGGA', 'GATTTCCC', 'GCAAACTG', 'GCACTCAG', 'GCATCACT', 'GCATCGAG', 'GCCAAAGC', 'GCCAACAT', 'GCCTGGTA', 'GCCTTGTG', 'GCGCTGAT', 'GCGGTAAC', 'GCGTATTC', 'GCGTGCAA', 'GCTAAGTT', 'GCTACCGT', 'GCTATGGG', 'GCTCGTAG', 'GCTTCTCC', 'GGAACGAA', 'GGAAGTCC', 'GGACTGGA', 'GGACTTCT', 'GGAGGTTT', 'GGAGTAAG', 'GGATTGTT', 'GGCAAGGT', 'GGCACTTC', 'GGCCCAAT', 'GGCGACAA', 'GGCTATAA', 'GGCTTTGC', 'GGGAGATG', 'GGGATTAC', 'GGGCATCA', 'GGGTCATT', 'GGGTCTAG', 'GGTAAATC', 'GGTAGCCA', 'GGTCCTAA', 'GGTCTTTC', 'GGTGTCGA', 'GGTTACAC', 'GGTTAGGG', 'GGTTGAGA', 'GTAAACAA', 'GTAAGCCG', 'GTAATCTG', 'GTACGCTT', 'GTACGGAC', 'GTATACGT', 'GTATTGAC', 'GTCAAGAG', 'GTCAGACC', 'GTCAGGTT', 'GTCCACTA', 'GTCCGTCA', 'GTCCTTGC', 'GTCTAATC', 'GTCTGGAA', 'GTCTTCCT', 'GTGAACTC', 'GTGAGGCA', 'GTGATAAA', 'GTGCCCAT', 'GTGCGAAG', 'GTGGTGCT', 'GTGTCACC', 'GTGTCAGG', 'GTTACTAG', 'GTTCTGCT', 'GTTGTCCG', 'TAAACCGA', 'TAACTTCT', 'TAAGGGCC', 'TAATCCAT', 'TAATGTGG', 'TACCCTGC', 'TACCGCTC', 'TACCTAAG', 'TACCTCCC', 'TACGCGAG', 'TACGTTCG', 'TACTGAAT', 'TAGATCAA', 'TAGCCACA', 'TAGCGGAT', 'TAGGCTTT', 'TAGGTACG', 'TAGTAGCC', 'TAGTCTCT', 'TATCCACG', 'TATCTGTC', 'TATGTGAA', 'TATTAGCG', 'TCAAATGG', 'TCAAGGCG', 'TCAGCCTC', 'TCATACCA', 'TCATAGCT', 'TCATTTCA', 'TCCAGAAG', 'TCCCTGGA', 'TCCGACAC', 'TCCGCTGT', 'TCCTATAT', 'TCGACTGC', 'TCGAGTTT', 'TCGCAATC', 'TCGGTCAT', 'TCGTGGGT', 'TCGTTCCC', 'TCTAAACT', 'TCTATTCC', 'TCTGATTT', 'TCTTTGAC', 'TGAATAGG', 'TGAATCCT', 'TGACGTCG', 'TGAGAGCG', 'TGAGCACA', 'TGCACCAG', 'TGCCGGTA', 'TGCGACTA', 'TGCTGACG', 'TGCTTCAT', 'TGCTTGGG', 'TGGAAAGC', 'TGGACGGA', 'TGGCTAGT', 'TGGGAATT', 'TGGTGTCT', 'TGGTTAAC', 'TGTTATCA')
+
+bc.rc <- c('GTTTGTTT', 'CCGTGTTT', 'TAGTGTTT', 'GGCGGTTT', 'GATCGTTT', 'TCACGTTT', 'TGTAGTTT', 'CACAGTTT', 'CTTTCTTT', 'GCCTCTTT', 'CGGGCTTT', 'ATGACTTT', 'TGCTATTT', 'CGGAATTT', 'CATTTGTT', 'GTTCTGTT', 'CCGCTGTT', 'AAATCGTT', 'TTGGCGTT', 'CTACCGTT', 'GTAACGTT', 'ACTGAGTT', 'AGGCAGTT', 'CTGTTCTT', 'ACCTTCTT', 'ATACTCTT', 'GAAGGCTT', 'AGGAGCTT', 'TCATCCTT', 'AGCGCCTT', 'GGTCCCTT', 'CAATACTT', 'TTGGACTT', 'CCCGACTT', 'TCTCACTT', 'GACAACTT', 'TCCTTATT', 'GATGTATT', 'GTCATATT', 'GCCGGATT', 'CTTCGATT', 'GAACGATT', 'ACGCCATT', 'CATACATT', 'ATCTTTGT', 'CTACTTGT', 'AAGATTGT', 'CTTGGTGT', 'TTATCTGT', 'TGGCCTGT', 'CGAGATGT', 'GTCCATGT', 'GGGTTGGT', 'CCCTTGGT', 'TCTGTGGT', 'AAACTGGT', 'GCATGGGT', 'AATCGGGT', 'TTGAGGGT', 'TCGACGGT', 'CTTCAGGT', 'GGGAAGGT', 'GAATTCGT', 'GTCGTCGT', 'TTAAGCGT', 'TGCTCCGT', 'ACTGCCGT', 'TAACCCGT', 'CCAACCGT', 'GTTTACGT', 'CAATTAGT', 'CGGGTAGT', 'GCTCTAGT', 'GTATGAGT', 'TTCCGAGT', 'CCAGCAGT', 'TGACCAGT', 'AGCGAAGT', 'TGGTTTCT', 'CACTTTCT', 'AAGCTTCT', 'TTGATTCT', 'TGAGGTCT', 'CCTCGTCT', 'GTCTCTCT', 'GCACCTCT', 'GCGTTGCT', 'TACGTGCT', 'GGCATGCT', 'AGATGGCT', 'ACCACGCT', 'GTGGAGCT', 'TCGAAGCT', 'TGTGTCCT', 'CGACTCCT', 'TATTGCCT', 'TTCGGCCT', 'AAACGCCT', 'CAGTCCCT', 'TTTACCCT', 'GCTTACCT', 'ATATACCT', 'GGGAACCT', 'CCATTACT', 'TAACTACT', 'TTGTGACT', 'CACGGACT', 'GAAGCACT', 'GTTCAACT', 'CCGCAACT', 'TACAAACT', 'CCTGTTAT', 'TAGCTTAT', 'GGGTGTAT', 'GAGAGTAT', 'ACATCTAT', 'TTGCATAT', 'ACCCATAT', 'CGATTGAT', 'TCCCTGAT', 'GGTGGGAT', 'ATGCGGAT', 'ACTAGGAT', 'AGCGCGAT', 'GTTACGAT', 'GCCAAGAT', 'GTTGTCAT', 'CAAGTCAT', 'ATATGCAT', 'CTCCGCAT', 'GAGCCCAT', 'CAGACCAT', 'CGGCACAT', 'AAGGTAAT', 'CGAATAAT', 'CTCAGAAT', 'ACTTCAAT', 'GGGCCAAT', 'ATGGAAAT', 'CAACAAAT', 'AATGTTTG', 'CTGCGTTG', 'ATTCCTTG', 'AACCCTTG', 'GTACCTTG', 'CTAGATTG', 'GAGAATTG', 'AGGTTGTG', 'TACTTGTG', 'GGTTAGTG', 'ATCAAGTG', 'CGAGTCTG', 'CCCATCTG', 'GCAACCTG', 'TTAAACTG', 'TCGTCATG', 'GCAGCATG', 'AATGAATG', 'CCCGAATG', 'TAGAAATG', 'AGAGGTGG', 'CAACGTGG', 'CTGTCTGG', 'TTCGCTGG', 'TCATATGG', 'GTGGATGG', 'GACGATGG', 'ATGCATGG', 'CTTACGGG', 'AGAACGGG', 'CAAGAGGG', 'AAACAGGG', 'TGCAAGGG', 'AAAGTCGG', 'GATCTCGG', 'CGTATCGG', 'ATTTCCGG', 'AGCTACGG', 'TAAGACGG', 'AGCGTAGG', 'TAAATAGG', 'TCATGAGG', 'TGTAAAGG', 'GACAAAGG', 'GAGTTTCG', 'TCGGTTCG', 'CTTCTTCG', 'AAATGTCG', 'TAGCCTCG', 'TTGGATCG', 'TGCCATCG', 'TTAGTCCG', 'TACAGCCG', 'ACTCACCG', 'TCGGTACG', 'ATTCGACG', 'GTTGCACG', 'ATCCCACG', 'TGTACACG', 'AACACACG')
+
+bc.rc <- c(bc.rc, 'AGGCAACG', 'ACGAAACG', 'GGCGTTAG', 'TCCCGTAG', 'TAGTCTAG', 'CGTGCTAG', 'CCTACTAG', 'TGTTTGAG', 'GATGTGAG', 'TTTGGGAG', 'TGGAGGAG', 'TCACCGAG', 'CTATAGAG', 'ACGCAGAG', 'CCCTTCAG', 'ACGCTCAG', 'CATCGCAG', 'TCTAGCAG', 'TGTTCCAG', 'ATACCCAG', 'TGCGACAG', 'GGTCACAG', 'TTTAACAG', 'CACAACAG', 'GGAAACAG', 'GGCCTAAG', 'ACACTAAG', 'CGTAGAAG', 'GGATAAAG', 'AGTGAAAG', 'GTCCAAAG', 'TGTCTTTC', 'CGTATTTC', 'ATATCTTC', 'TGGGATTC', 'GCGCATTC', 'TTTGTGTC', 'CAGGTGTC', 'CGCTAGTC', 'GGTTTCTC', 'TTCCGCTC', 'CACTCCTC', 'TGACCCTC', 'GTACACTC', 'TGCGTATC', 'TCTGCATC', 'TAACCATC', 'GCCACATC', 'CTTTAATC', 'AAGTAATC', 'TCCCAATC', 'GGGAAATC', 'CAGTTTGC', 'CTGAGTGC', 'AGTGATGC', 'CTCGATGC', 'GCTTTGGC', 'ATGTTGGC', 'TACCAGGC', 'CACAAGGC', 'ATCAGCGC', 'GTTACCGC', 'GAATACGC', 'TTGCACGC', 'AACTTAGC', 'ACGGTAGC', 'CCCATAGC', 'CTACGAGC', 'GGAGAAGC', 'TTCGTTCC', 'GGACTTCC', 'TCCAGTCC', 'AGAAGTCC', 'AAACCTCC', 'CTTACTCC', 'AACAATCC', 'ACCTTGCC', 'GAAGTGCC', 'ATTGGGCC', 'TTGTCGCC', 'TTATAGCC', 'GCAAAGCC', 'CATCTCCC', 'GTAATCCC', 'TGATGCCC', 'AATGACCC', 'CTAGACCC', 'GATTTACC', 'TGGCTACC', 'TTAGGACC', 'GAAAGACC', 'TCGACACC', 'GTGTAACC', 'CCCTAACC', 'TCTCAACC', 'TTGTTTAC', 'CGGCTTAC', 'CAGATTAC', 'AAGCGTAC', 'GTCCGTAC', 'ACGTATAC', 'GTCAATAC', 'CTCTTGAC', 'GGTCTGAC', 'AACCTGAC', 'TAGTGGAC', 'TGACGGAC', 'GCAAGGAC', 'GATTAGAC', 'TTCCAGAC', 'AGGAAGAC', 'GAGTTCAC', 'TGCCTCAC', 'TTTATCAC', 'ATGGGCAC', 'CTTCGCAC', 'AGCACCAC', 'GGTGACAC', 'CCTGACAC', 'CTAGTAAC', 'AGCAGAAC', 'CGGACAAC', 'TCGGTTTA', 'AGAAGTTA', 'GGCCCTTA', 'ATGGATTA', 'CCACATTA', 'GCAGGGTA', 'GAGCGGTA', 'CTTAGGTA', 'GGGAGGTA', 'CTCGCGTA', 'CGAACGTA', 'ATTCAGTA', 'TTGATCTA', 'TGTGGCTA', 'ATCCGCTA', 'AAAGCCTA', 'CGTACCTA', 'GGCTACTA', 'AGAGACTA', 'CGTGGATA', 'GACAGATA', 'TTCACATA', 'CGCTAATA', 'CCATTTGA', 'CGCCTTGA', 'GAGGCTGA', 'TGGTATGA', 'AGCTATGA', 'TGAAATGA', 'CTTCTGGA', 'TCCAGGGA', 'GTGTCGGA', 'ACAGCGGA', 'ATATAGGA', 'GCAGTCGA', 'AAACTCGA', 'GATTGCGA', 'ATGACCGA', 'ACCCACGA', 'GGGAACGA', 'AGTTTAGA', 'GGAATAGA', 'AAATCAGA', 'GTCAAAGA', 'CCTATTCA', 'AGGATTCA', 'CGACGTCA', 'CGCTCTCA', 'TGTGCTCA', 'CTGGTGCA', 'TACCGGCA', 'TAGTCGCA', 'CGTCAGCA', 'ATGAAGCA', 'CCCAAGCA', 'GCTTTCCA', 'TCCGTCCA', 'ACTAGCCA', 'AATTCCCA', 'AGACACCA', 'GTTAACCA', 'TGATAACA')
+
+whitelist <- c()
+for (i in 1:384){whitelist<-c(whitelist, paste0(bc.list[i], bc.rc))}
+
+```
+
+## Bad Barcodes
+
+Look for poly-G or incompatable barcodes and remove them.
+
+```{r}
+# remove cells with lots of Gs (library bc + 12) or at least one N
+ap.cells <- colnames(apz2)
+
+apz2.remove <- ap.cells[str_count(substr(ap.cells,1,16), pattern = "G")>8 | str_count(substr(ap.cells,1,16), pattern = "GGGGG")>0 | str_count(substr(ap.cells,1,16), pattern = "N")>0]
+
+apz2.remove <- c(apz2.remove, ap.cells[!substr(ap.cells,1,16) %in% whitelist])
+apz2.remove <- unique(apz2.remove)
+print(apz2.remove)
+```
+
+We will remove `r length(apz2.remove)` barcodes. Of these barcodes, `r length(ap.cells[!substr(ap.cells,1,16) %in% whitelist])` don't belong to the whitelist. The other `r length(apz2.remove)-length(ap.cells[!substr(ap.cells,1,16) %in% whitelist])` have strings of multiple `G`'s associated with them and maybe associated with barcodes that had sequencing errors and mis-assigned reads.
+
+### Removed Nuclei
+
+Examine nuclei with bad barcodes that are to be removed: 
+
+````{r}
+apz2.polyg <- subset(apz2, cells = apz2.remove)
+VlnPlot(object = apz2.polyg, features = c("reads", "nCount_RNA", "nFeature_RNA", "complexity"), ncol=4)
+VlnPlot(object = apz2.polyg, features = c("percent.mito", "percent.neuro", "percent.glia"))
+```
+
+Bad barcodes are associated with abnormal "complexity" (nFeature_RNA/reads) values. Other "cells" that are actually clumps of nuclei will similarly have abnormal complexity values. So we will use complexity as a QC filter parameter. We will also use commonly used parameters like UMI counts and unique gene counts. We will also track reads and mitochondrial gene expression.
+
+## QC Remaining Nuclei
+
+```{r filter1}
+apz2.filtered_bc <- subset(apz2, cells = ap.cells[!ap.cells %in% apz2.remove])
+VlnPlot(object = apz2.filtered_bc, features = c("nCount_RNA", "nFeature_RNA", "complexity", "reads", "percent.mito"), ncol = 5)
+```
+
+```{r}
+#FeatureScatter(object = apz2.filtered, "nCount_RNA", "percent.mito")
+#FeatureScatter(object = apz2.filtered, "nFeature_RNA", "percent.mito")
+
+p1<-FeatureScatter(object = apz2.filtered_bc, "nCount_RNA", "nFeature_RNA")+theme(legend.position="none")
+p2<-FeatureScatter(object = apz2.filtered_bc, "nCount_RNA", "complexity")+theme(legend.position=c(.7,.99))
+p3<-FeatureScatter(object = apz2.filtered_bc, "reads", "nFeature_RNA")+theme(legend.position="none")
+p4<-FeatureScatter(object = apz2.filtered_bc, "reads", "nCount_RNA")+theme(legend.position="none")
+
+p5<-FeatureScatter(object = apz2.filtered_bc, "nFeature_RNA", "percent.mito")+theme(legend.position="none")
+p6<-FeatureScatter(object = apz2.filtered_bc, "nCount_RNA", "percent.mito")+theme(legend.position=c(.7,.99))
+p7<-FeatureScatter(object = apz2.filtered_bc, "reads", "percent.mito")+theme(legend.position="none")
+p8<-FeatureScatter(object = apz2.filtered_bc, "complexity", "percent.mito")+theme(legend.position="none")
+
+plot_grid(p1, p2, p3, p4)
+plot_grid(p5, p6, p7, p8)
+
+```
+
+
+## Set QC Filter
+
+Filter out low quality cells with the QC filters: 
+  nCount_RNA < 11000 
+  nFeature_RNA > 450 
+  0.05 < complexity < 0.15
+
+```{r filter_lowQC}
+
+apz2.filtered <- subset(apz2.filtered_bc, 
+                        subset = nCount_RNA < 11000 
+                        & nFeature_RNA > 450 
+                        & complexity < 0.15 
+                        & complexity > 0.05)
+
+VlnPlot(object = apz2.filtered, features = c("nCount_RNA", "nFeature_RNA", "complexity", "percent.mito", "reads"), ncol = 5)
+
+```
+
+After filters there are `r length(colnames(apz2.filtered))` many nuclei.
+
+# First Analysis (ID possible doublets)
+
+SCTransform is a regularized regression model that takes raw counts and normalizes the expression outputing a corrected UMI counts matrix and Pearson's residuals (see `?SCTramsform` for more information). The authors of this method report that their modeling and GLM technique reduces technical noise to better capture biological variation. It uses UMI counts as an approximation for sequencing depth. Here, I have also regressed out the effects of "reads". By supplying SCTransform with information on exact sequencing depth, I have found that it better reduces techincal noise. 
+
+NOTE: Recently, the authors reccomended on their github that transformation and merging occur on individual batches and merged afterwards. I have conducted this recommened analysis (not presented here) and it yields results very similar to transformation on a merged dataset when `reads` are regressed out. 
+
+```{r, warning = FALSE}
+apz.sc <- SCTransform(apz2.filtered, verbose = FALSE, vars.to.regress = "reads")
+
+apz.sc <- RunPCA(apz.sc, verbose = FALSE)
+apz.sc <- RunUMAP(apz.sc, dims = 1:30, verbose = FALSE)
+
+apz.sc <- FindNeighbors(apz.sc, dims = 1:30, verbose = FALSE)
+apz.sc <- FindClusters(apz.sc, verbose = FALSE)
+DimPlot(apz.sc, label = TRUE) + labs(title = "AP All Nuclei", subtitle = length(colnames(apz.sc)))
+
+```
+
+## Libraries AP1 vs AP2
+
+We should check the distribution of cells by library to ensure that there isn't any batch effect. 
+
+```{r}
+DimPlot(apz.sc, label = F, group.by = "orig.ident") + labs(title = "AP All Cells", subtitle = "by library")
+freq_table <- prop.table(x = table(apz.sc@active.ident, apz.sc@meta.data$orig.ident), 
+    margin = 2)
+freq_table
+names <- paste(c(c(0:14), c(0:14)))
+barplot2(height = freq_table, beside = T, names.arg = names ,horiz = F, inside = T, col = colorRampPalette(brewer.pal(12, "Paired"), bias =1)(15))
+```
+
+While every cluster has both libraries, cluster 2 seems enriched in AP2. Likewise, AP1 has more of cluster 0 than AP2, but these shifts may have occured due to the sequential processing as AP2 had to sit on ice while AP1 was encapsulated. 
+
+## Quality
+
+```{r}
+FeaturePlot(apz.sc, features = c("percent.neuro", "percent.glia"), max.cutoff = 0.02)
+FeaturePlot(apz.sc, features = c("reads", "complexity", "nFeature_RNA", "percent.mito"))
+
+VlnPlot(apz.sc, features = c("complexity", "reads" ), sort = "increasing")
+VlnPlot(apz.sc, features = c("percent.glia", "percent.neuro" ), sort = "increasing", y.max = 0.02)
+
+VlnPlot(apz.sc, features = c("percent.mito" ), sort = "increasing")
+```
+
+Cluster 2 has both Neural and Glial markers present, as well as higher mitochondrial gene expression. While different cell types likely will have variation in mitochondrial expression, the lack of unique markers for cluster 2 and the accumulation of droplets with the highest mitochondrial expression may indicate poor quality cells. 
+
+## Subset Neurons
+
+Clusters 1, 4, 5, 7, and 9 express various neuronal markers and have relatively low glial markers. We will subset these nuclei and examine them in isolation for better resolution. 
+
+```{r, warning=F}
+n.clusters = c(1,4,5,7,8,9)
+apz.sc.n <- subset(apz2.filtered, cells = WhichCells(apz.sc, idents =  n.clusters))
+apz.sc.n <- SCTransform(apz.sc.n, verbose = FALSE, vars.to.regress = c("reads"))
+apz.sc.n <- RunPCA(apz.sc.n, verbose = FALSE)
+
+dims = 30
+apz.sc.n <- RunUMAP(apz.sc.n, dims = 1:dims, verbose = FALSE)
+apz.sc.n <- FindNeighbors(apz.sc.n, dims = 1:dims, verbose = FALSE)
+apz.sc.n <- FindClusters(apz.sc.n, verbose = FALSE)
+DimPlot(apz.sc.n, label = TRUE) + labs(title = "AP Neurons", subtitle = "Round 1")
+
+```
+
+### Libraries AP1 vs AP2
+
+```{r}
+DimPlot(apz.sc.n, label = FALSE, group.by = "orig.ident") + labs(title = "AP Neurons", subtitle = "Round 1")
+freq_table <- prop.table(x = table(apz.sc.n@active.ident, apz.sc.n@meta.data$orig.ident), 
+    margin = 2)
+freq_table
+names <- paste(c(c(0:9), c(0:9)))
+barplot2(height = freq_table, beside = T, names.arg = names ,horiz = F, inside = T, col = colorRampPalette(brewer.pal(12, "Paired"), bias =1)(10))
+```
+
+### Quality
+
+```{r}
+FeaturePlot(apz.sc.n, features = c("percent.neuro", "percent.glia","Gad2", "Slc17a6"))
+VlnPlot(apz.sc.n, features = c("nCount_RNA", "nFeature_RNA", "percent.mito"), sort = "increasing")
+```
+
+Cluster 8 expresses higher mitochondrial content, both glial and neuronal markers, as well as both excitatory and inhibitory genes - indicative of potential doublet/clumping so we will remove these cells too and recluster.
+
+# Final Analysis (no doublets)
+
+Having gone through one round of clustering and subsetting and clustering again, we have identified 2 clusters of nuclei that contain both neural and glial genes. Cluster 2 from the first round looking at all captured nuclei and cluster 8 from the neurons subsetting were identified as possible doublet droplets. Because we think these are technical artifacts we will remove them for final analysis. 
+
+## All Nuclei of the AP 
+```{r}
+ap.clean <- subset(apz2.filtered, cells = colnames(apz2.filtered)[!colnames(apz2.filtered)%in%WhichCells(apz.sc, idents = 2)])
+ap.clean <- subset(apz2.filtered, cells = colnames(ap.clean)[!colnames(ap.clean)%in%WhichCells(apz.sc.n, idents = 8)])
+
+ap.clean <- SCTransform(ap.clean, verbose = FALSE, vars.to.regress = c("reads"))
+ap.clean <- RunPCA(ap.clean, verbose = FALSE)
+ap.clean <- RunUMAP(ap.clean, dims = 1:30, verbose = FALSE)
+ap.clean <- FindNeighbors(ap.clean, dims = 1:30, verbose = FALSE)
+ap.clean <- FindClusters(ap.clean, verbose = FALSE)
+
+DimPlot(ap.clean, label = TRUE, ) + labs(title = "AP All Nuclei", subtitle = "pop 2 removed; pop 8 removed")
+```
+
+There are `r length(colnames(ap.clean))` high quality nuclei. With `r length(WhichCells(ap.clean, idents = c(2,3,4,5,7,8,9)))` nuclei from neurons. 
+
+## Libraries AP1 vs AP2
+
+```{r}
+DimPlot(ap.clean, label = TRUE, group.by = "orig.ident") + labs(title = "AP All Nuclei", subtitle = "by library")
+freq_table <- prop.table(x = table(ap.clean@active.ident, ap.clean@meta.data$orig.ident), 
+    margin = 2)
+freq_table
+names <- paste(c(c(0:14), c(0:14)))
+barplot2(height = freq_table, beside = T, names.arg = names ,horiz = F, inside = T, col = colorRampPalette(brewer.pal(12, "Paired"), bias =1)(15))
+```
+
+There is good representation of all cell types by both libraries.
+
+## Cell Types
+
+```{r}
+plot_grid(
+  FeaturePlot(ap.clean, features = c("Vim"), max.cutoff = 2) + NoLegend(),
+  FeaturePlot(ap.clean, features = c("Cldn10"), max.cutoff = 2) + NoLegend(),
+  FeaturePlot(ap.clean, features = c("Olig2"), max.cutoff = 2) + NoLegend(),
+  FeaturePlot(ap.clean, features = c("Col3a1"), max.cutoff = 2) + NoLegend())
+
+plot_grid(
+  FeaturePlot(ap.clean, features = c("Csf1r"), max.cutoff = 2) + NoLegend(),
+  FeaturePlot(ap.clean, features = c("Rgs5"), max.cutoff = 2) + NoLegend(),
+  FeaturePlot(ap.clean, features = c("Cfap52"), max.cutoff = 2) + NoLegend())
+
+plot_grid(
+  FeaturePlot(ap.clean, features = c("Gad2"), max.cutoff = 2) + NoLegend(),
+  FeaturePlot(ap.clean, features = c("Slc17a6"), max.cutoff = 2), rel_widths = c(1,1.2))
+```
+```{r}
+ap.renamed <- ap.clean
+
+ap.renamed <- RenameIdents(ap.renamed, '1' = "Tanycyte")
+ap.renamed <- RenameIdents(ap.renamed, '0' = "Tanycyte")
+
+ap.renamed <- RenameIdents(ap.renamed, '6' = "Astrocyte")
+ap.renamed <- RenameIdents(ap.renamed, '10' = "Ependymocyte")
+ap.renamed <- RenameIdents(ap.renamed, '12' = "Pericyte")
+ap.renamed <- RenameIdents(ap.renamed, '11' = "Stromal Cell")
+ap.renamed <- RenameIdents(ap.renamed, '13' = "Oligodendrocyte")
+ap.renamed <- RenameIdents(ap.renamed, '14' = "Microglia")
+
+ap.renamed <- RenameIdents(ap.renamed, '2' = "GABAergic Neuron")
+ap.renamed <- RenameIdents(ap.renamed, '5' = "GABAergic Neuron")
+ap.renamed <- RenameIdents(ap.renamed, '8' = "GABAergic Neuron")
+
+ap.renamed <- RenameIdents(ap.renamed, '3' = "Glutamtergic Neuron")
+ap.renamed <- RenameIdents(ap.renamed, '4' = "Glutamtergic Neuron")
+ap.renamed <- RenameIdents(ap.renamed, '7' = "Glutamtergic Neuron")
+ap.renamed <- RenameIdents(ap.renamed, '9' = "Glutamtergic Neuron")
+
+
+ap.renumbered <- ap.renamed
+
+ap.renumbered <- RenameIdents(ap.renumbered, "Tanycyte" = "1")
+ap.renumbered <- RenameIdents(ap.renumbered, "Astrocyte" = "3")
+ap.renumbered <- RenameIdents(ap.renumbered, "Ependymocyte" = "2")
+ap.renumbered <- RenameIdents(ap.renumbered, "Pericyte" = "5")
+ap.renumbered <- RenameIdents(ap.renumbered, "Stromal Cell" = "4")
+ap.renumbered <- RenameIdents(ap.renumbered, "Oligodendrocyte" = "7")
+ap.renumbered <- RenameIdents(ap.renumbered, "Microglia" = "6")
+
+ap.renumbered <- RenameIdents(ap.renumbered, "GABAergic Neuron" = "9")
+ap.renumbered <- RenameIdents(ap.renumbered, "Glutamtergic Neuron" = "8")
+```
+```{r, fig.width=11, fig.height=4}
+ap.clean[["old.ident"]] <- Idents(object = ap.clean)
+ap.clean[["renumbered"]] <- Idents(object = ap.renumbered)
+ap.clean[["renamed"]] <- Idents(object = ap.renamed)
+
+plot_grid(
+DimPlot(ap.clean, group.by = "renamed", label = T) + NoLegend(),
+DimPlot(ap.clean, group.by = "renumbered", label = T), rel_widths = c(1,1.2))
+```
+```{r}
+DotPlot(ap.renamed, features = c("Vim", "Cldn10", "Cfap52", "Rgs5", "Col3a1", "Olig2", "Csf1r", "Gad2", "Slc17a6") ) + theme(axis.title.x = element_blank(), axis.title.y = element_blank(), axis.text.x = element_text(angle = 90))
+```
+```{r}
+table(ap.renamed@active.ident)
+```
+
+## Neurons
+
+```{r}
+ap.clean.n <- subset(ap.clean, cells = WhichCells(ap.clean, idents = c(2:5,7:9)))
+ap.clean.n <- SCTransform(ap.clean.n, verbose = FALSE, vars.to.regress = "reads")
+ap.clean.n <- RunPCA(ap.clean.n, verbose = FALSE)
+
+dims = 30
+ap.clean.n <- RunUMAP(ap.clean.n, dims = 1:dims, verbose = FALSE)
+ap.clean.n <- FindNeighbors(ap.clean.n, dims = 1:dims, verbose = FALSE)
+ap.clean.n <- FindClusters(ap.clean.n, verbose = FALSE)
+DimPlot(ap.clean.n, label = TRUE) + labs(title = "All Neurons")
+```
+
+### Markers for All Neurons
+
+
+```{r}
+clean.markers <- FindAllMarkers(ap.clean.n, only.pos = T)
+top9.clean <- clean.markers %>% filter(pct.2 <.4) %>% group_by(cluster) %>% top_n(n = 9, wt = 1/p_val_adj) %>% arrange(pct.2, .by_group = T) 
+```
+
+### Cluster 0
+
+```{r}
+i=1
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 1
+
+```{r}
+i=2
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 2
+
+```{r}
+i=3
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 3
+
+```{r}
+i=4
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 4
+
+```{r}
+i=5
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 5
+
+```{r}
+i=6
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 6
+
+```{r}
+i=7
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 7
+
+```{r}
+i=8
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 8
+
+```{r}
+i=9
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### Cluster 9
+
+```{r}
+i=10
+FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
+```
+
+### NTS Neurons
+
+Because these libraries were produced from disections of the AP contamination from the nearby NTS is to be expected. Using Allen ISH database we can use genes that appear in the NTS and not in the AP to distinguish contaminating neurons. 
+
+```{r}
+FeaturePlot(ap.clean.n, features = c("Trpc6", "Synpr","Cbln2"))
+FeaturePlot(ap.clean.n, features = c("Ecel1", "Penk","Chrm2"))
+```
+
+```{r}
+DimPlot(ap.clean.n, cells.highlight = WhichCells(ap.clean.n, idents = c(3,5,8)), pt.size = 1) + 
+  scale_color_manual(labels = c("AP", "NTS"), values = c("magenta", "limegreen")) +
+  labs(title = "All Neurons from AP Dissection", subtitle = "NTS contamination")
+
+FeaturePlot(ap.clean.n, features = c("Ramp3", "Slc6a2", "Prlhr", "Sntb1"), cols = c("light grey", "magenta"), pt.size = 1)
+FeaturePlot(ap.clean.n, features = c("Gpr83", "Bcat1", "Ntrk1"), cols = c("light grey", "magenta"), pt.size = 1)
+FeaturePlot(ap.clean.n, features = c("Trpc6", "Chrm2", "Synpr"), cols = c("light grey", "limegreen"), pt.size = 1)
+```
+
+## AP only Neurons (no NTS)
+
+```{r}
+no_nts <- subset(apz2.filtered, cells = WhichCells(ap.clean.n, idents = c(0,1,2,4,6,7,9)))
+no_nts <- SCTransform(no_nts, verbose = FALSE, vars.to.regress = "reads")
+no_nts <- RunPCA(no_nts, verbose = FALSE)
+
+dims = 30
+no_nts <- RunUMAP(no_nts, dims = 1:dims, verbose = FALSE)
+no_nts <- FindNeighbors(no_nts, dims = 1:dims, verbose = FALSE)
+no_nts <- FindClusters(no_nts, verbose = FALSE)#, resolution = 1.4)
+DimPlot(no_nts, label = TRUE) + labs(title = "AP Neurons", subtitle = paste0("NTS removed \n", length(colnames(no_nts))))
+
+```
+
+### Markers
+
+```{r,  fig.height = 10}
+no_nts.rename <- RenameIdents(no_nts, 
+                          '0' = '4_GABA', '3' = '5_GABA', '5' = '6_GABA', 
+                          '1' = '0_GLUT', '2' = '1_GLUT', '4' = '2_GLUT', '6' = '3_GLUT')
+
+
+no_nts.rename@active.ident <- factor(x = no_nts.rename@active.ident, levels = sort(levels(no_nts.rename))) 
+no_nts.rename.markers <- FindAllMarkers(no_nts.rename, only.pos = T)
+
+top10 <- no_nts.rename.markers %>% filter(pct.2 <.125) %>% group_by(cluster) %>% top_n(n = 10, wt = 1/p_val_adj) %>% arrange(pct.2, .by_group = T) 
+
+DoHeatmap(no_nts.rename, features = top10$gene) + 
+    scale_fill_gradientn(colors = c("azure4", "ghostwhite", "purple")) + 
+    guides(color = FALSE)
+```
+```{r}
+DimPlot(no_nts.rename, label = T)
+```
+
+# FeaturePlots in the Paper
+
+```{r}
+FeaturePlot(ap.clean.n, features = c("Ramp3", "Slc6a2", "Prlhr", "Sntb1"))
+FeaturePlot(ap.clean.n, features = c("Gpr83", "Bcat1", "Ntrk1", "Synpr"))
+FeaturePlot(ap.clean.n, features = c("Trpc6", "Chrm2", "Gad2", "Slc17a6"))
+```
+```{r}
+FeaturePlot(no_nts, features = c("Gad2", "Slc17a6", "Glp1r"))
+FeaturePlot(no_nts, features = c("Calcr","Slc6a2", "Prlhr", "Gfral"))
+FeaturePlot(no_nts, features = c("Ntrk1", "Bcat1", "Gpr83"))
+```
+
+
+# Previously Problematic Genes
+
+With an unmodified refrence genome some genes known to be expressed on the Allen Brain Institute's ISH atlas of fine structures were not present in the dataset. After examining BAM files, significant piles of reads just outside of annotated regions of these genes were observed. The GTF used for alignment was modified to extend the corresponding 3'UTRs and include these reads. 
+
+## Ghsr
+```{r}
+FeaturePlot(ap.clean.n, features =c("Ghsr"))
+```
+
+## Glp1r
+```{r}
+FeaturePlot(ap.clean.n, features =c("Glp1r"))
+```
+
+## Prlhr
+```{r}
+FeaturePlot(ap.clean.n, features =c("Prlhr"))
+```
+
+```{r, include=F}
+#setwd("D:/scRNA/AP/zUMI_2_bc")
+#save(apz.sc.n2, file = "ap.neurons.Rdata")
+#save(apz.sc, file = "ap.cells.Rdata")
+#save(ap.clean, file = "AP_NoDoublets.Rdata")
+#save(ap.clean.n, file = "AP_Neurons_NoDoublets.Rdata")
+```
+
+
