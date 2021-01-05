@@ -1,7 +1,7 @@
 ---
 title: "Area Postrema Cell Types"
 author: "Judith Kaye"
-date: "June 3, 2020"
+date: "January 5, 2021"
 output: 
   html_document:
     code_folding: hide
@@ -112,11 +112,15 @@ counting_opts:
   strand: 0
   Ham_Dist: 0
 
+# Session Info
+```{r sessionInfo}
+sessionInfo()
+```
 
 # Load Data
 ```{r load}
 
-setwd("D:/scRNA/AP/zUMI_2_bc")
+setwd("C:/Users/jewiff/Documents/GitHub/AP_scRNA")
 ap1.rds <- readRDS("AP1_zUMI2.gl.gh.prl.pro.dgecounts.rds")
 ap2.rds <- readRDS("AP2_zUMI2.gl.gh.prl.pro.dgecounts.rds")
 ap1.mat <- as.matrix(ap1.rds$umicount$inex$all)
@@ -219,7 +223,7 @@ The library bc for AP1 is `AGAGGATA` and AP2 is `TATGCAGT`. By auto detection, z
 
 Barcodes not belonging to the whitelist should not be expected and poly-G barcodes can also be a source of poor quality cells. Here I will filter for InDrops compatible barcodes and poly-G reads.
 
-```{r}
+```{r whitelist}
 #bc_whitelist is a pairwise combination of the list below
 bc.list <- c('AAACAAAC', 'AAACACGG', 'AAACACTA', 'AAACCGCC', 'AAACGATC', 'AAACGTGA', 'AAACTACA', 'AAACTGTG', 'AAAGAAAG', 'AAAGAGGC', 'AAAGCCCG', 'AAAGTCAT', 'AAATAGCA', 'AAATTCCG', 'AACAAATG', 'AACAGAAC', 'AACAGCGG', 'AACGATTT', 'AACGCCAA', 'AACGGTAG', 'AACGTTAC', 'AACTCAGT', 'AACTGCCT', 'AAGAACAG', 'AAGAAGGT', 'AAGAGTAT', 'AAGCCTTC', 'AAGCTCCT', 'AAGGATGA', 'AAGGCGCT', 'AAGGGACC', 'AAGTATTG', 'AAGTCCAA', 'AAGTCGGG', 'AAGTGAGA', 'AAGTTGTC', 'AATAAGGA', 'AATACATC', 'AATATGAC', 'AATCCGGC', 'AATCGAAG', 'AATCGTTC', 'AATGGCGT', 'AATGTATG', 'ACAAAGAT', 'ACAAGTAG', 'ACAATCTT', 'ACACCAAG', 'ACAGATAA', 'ACAGGCCA', 'ACATCTCG', 'ACATGGAC', 'ACCAACCC', 'ACCAAGGG', 'ACCACAGA', 'ACCAGTTT', 'ACCCATGC', 'ACCCGATT', 'ACCCTCAA', 'ACCGTCGA', 'ACCTGAAG', 'ACCTTCCC', 'ACGAATTC', 'ACGACGAC', 'ACGCTTAA', 'ACGGAGCA', 'ACGGCAGT', 'ACGGGTTA', 'ACGGTTGG', 'ACGTAAAC', 'ACTAATTG', 'ACTACCCG', 'ACTAGAGC', 'ACTCATAC', 'ACTCGGAA', 'ACTGCTGG', 'ACTGGTCA', 'ACTTCGCT', 'AGAAACCA', 'AGAAAGTG', 'AGAAGCTT', 'AGAATCAA', 'AGACCTCA', 'AGACGAGG', 'AGAGAGAC', 'AGAGGTGC', 'AGCAACGC', 'AGCACGTA', 'AGCATGCC', 'AGCCATCT', 'AGCGTGGT', 'AGCTCCAC', 'AGCTTCGA', 'AGGACACA', 'AGGAGTCG', 'AGGCAATA', 'AGGCCGAA', 'AGGCGTTT', 'AGGGACTG', 'AGGGTAAA', 'AGGTAAGC', 'AGGTATAT', 'AGGTTCCC', 'AGTAATGG', 'AGTAGTTA', 'AGTCACAA', 'AGTCCGTG', 'AGTGCTTC', 'AGTTGAAC', 'AGTTGCGG', 'AGTTTGTA', 'ATAACAGG', 'ATAAGCTA', 'ATACACCC', 'ATACTCTC', 'ATAGATGT', 'ATATGCAA', 'ATATGGGT', 'ATCAATCG', 'ATCAGGGA', 'ATCCCACC', 'ATCCGCAT', 'ATCCTAGT', 'ATCGCGCT', 'ATCGTAAC', 'ATCTTGGC', 'ATGACAAC', 'ATGACTTG', 'ATGCATAT', 'ATGCGGAG', 'ATGGGCTC', 'ATGGTCTG', 'ATGTGCCG', 'ATTACCTT', 'ATTATTCG', 'ATTCTGAG', 'ATTGAAGT', 'ATTGGCCC', 'ATTTCCAT', 'ATTTGTTG', 'CAAACATT', 'CAACGCAG', 'CAAGGAAT', 'CAAGGGTT', 'CAAGGTAC', 'CAATCTAG', 'CAATTCTC', 'CACAACCT', 'CACAAGTA', 'CACTAACC', 'CACTTGAT', 'CAGACTCG', 'CAGATGGG', 'CAGGTTGC', 'CAGTTTAA', 'CATGACGA', 'CATGCTGC', 'CATTCATT', 'CATTCGGG', 'CATTTCTA', 'CCACCTCT', 'CCACGTTG', 'CCAGACAG', 'CCAGCGAA', 'CCATATGA', 'CCATCCAC', 'CCATCGTC', 'CCATGCAT', 'CCCGTAAG', 'CCCGTTCT', 'CCCTCTTG', 'CCCTGTTT', 'CCCTTGCA', 'CCGACTTT', 'CCGAGATC', 'CCGATACG', 'CCGGAAAT', 'CCGTAGCT', 'CCGTCTTA', 'CCTACGCT', 'CCTATTTA', 'CCTCATGA', 'CCTTTACA', 'CCTTTGTC', 'CGAAACTC', 'CGAACCGA', 'CGAAGAAG', 'CGACATTT', 'CGAGGCTA', 'CGATCCAA', 'CGATGGCA', 'CGGACTAA', 'CGGCTGTA', 'CGGTGAGT', 'CGTACCGA', 'CGTCGAAT', 'CGTGCAAC', 'CGTGGGAT', 'CGTGTACA', 'CGTGTGTT')
 
@@ -238,7 +242,7 @@ for (i in 1:384){whitelist<-c(whitelist, paste0(bc.list[i], bc.rc))}
 
 Look for poly-G or incompatable barcodes and remove them.
 
-```{r}
+```{r qc_barcodes}
 # remove cells with lots of Gs (library bc + 12) or at least one N
 ap.cells <- colnames(apz2)
 
@@ -255,7 +259,7 @@ We will remove `r length(apz2.remove)` barcodes. Of these barcodes, `r length(ap
 
 Examine nuclei with bad barcodes that are to be removed: 
 
-````{r}
+````{r removed_cells}
 apz2.polyg <- subset(apz2, cells = apz2.remove)
 VlnPlot(object = apz2.polyg, features = c("reads", "nCount_RNA", "nFeature_RNA", "complexity"), ncol=4)
 VlnPlot(object = apz2.polyg, features = c("percent.mito", "percent.neuro", "percent.glia"))
@@ -265,7 +269,7 @@ Bad barcodes are associated with abnormal "complexity" (nFeature_RNA/reads) valu
 
 ## QC Remaining Nuclei
 
-```{r filter1}
+```{r filter_1}
 apz2.filtered_bc <- subset(apz2, cells = ap.cells[!ap.cells %in% apz2.remove])
 VlnPlot(object = apz2.filtered_bc, features = c("nCount_RNA", "nFeature_RNA", "complexity", "reads", "percent.mito"), ncol = 5)
 ```
@@ -317,7 +321,7 @@ SCTransform is a regularized regression model that takes raw counts and normaliz
 
 NOTE: Recently, the authors reccomended on their github that transformation and merging occur on individual batches and merged afterwards. I have conducted this recommened analysis (not presented here) and it yields results very similar to transformation on a merged dataset when `reads` are regressed out. 
 
-```{r, warning = FALSE}
+```{r all_cells_1, warning = FALSE}
 apz.sc <- SCTransform(apz2.filtered, verbose = FALSE, vars.to.regress = "reads")
 
 apz.sc <- RunPCA(apz.sc, verbose = FALSE)
@@ -333,7 +337,7 @@ DimPlot(apz.sc, label = TRUE) + labs(title = "AP All Nuclei", subtitle = length(
 
 We should check the distribution of cells by library to ensure that there isn't any batch effect. 
 
-```{r}
+```{r compare_libs}
 DimPlot(apz.sc, label = F, group.by = "orig.ident") + labs(title = "AP All Cells", subtitle = "by library")
 freq_table <- prop.table(x = table(apz.sc@active.ident, apz.sc@meta.data$orig.ident), 
     margin = 2)
@@ -346,7 +350,7 @@ While every cluster has both libraries, cluster 2 seems enriched in AP2. Likewis
 
 ## Quality
 
-```{r}
+```{r qc_check}
 FeaturePlot(apz.sc, features = c("percent.neuro", "percent.glia"), max.cutoff = 0.02)
 FeaturePlot(apz.sc, features = c("reads", "complexity", "nFeature_RNA", "percent.mito"))
 
@@ -362,7 +366,7 @@ Cluster 2 has both Neural and Glial markers present, as well as higher mitochond
 
 Clusters 1, 4, 5, 7, and 9 express various neuronal markers and have relatively low glial markers. We will subset these nuclei and examine them in isolation for better resolution. 
 
-```{r, warning=F}
+```{r subset_neurons, warning=F}
 n.clusters = c(1,4,5,7,8,9)
 apz.sc.n <- subset(apz2.filtered, cells = WhichCells(apz.sc, idents =  n.clusters))
 apz.sc.n <- SCTransform(apz.sc.n, verbose = FALSE, vars.to.regress = c("reads"))
@@ -378,7 +382,7 @@ DimPlot(apz.sc.n, label = TRUE) + labs(title = "AP Neurons", subtitle = "Round 1
 
 ### Libraries AP1 vs AP2
 
-```{r}
+```{r compare_libs_2}
 DimPlot(apz.sc.n, label = FALSE, group.by = "orig.ident") + labs(title = "AP Neurons", subtitle = "Round 1")
 freq_table <- prop.table(x = table(apz.sc.n@active.ident, apz.sc.n@meta.data$orig.ident), 
     margin = 2)
@@ -389,7 +393,7 @@ barplot2(height = freq_table, beside = T, names.arg = names ,horiz = F, inside =
 
 ### Quality
 
-```{r}
+```{r qc_check_2}
 FeaturePlot(apz.sc.n, features = c("percent.neuro", "percent.glia","Gad2", "Slc17a6"))
 VlnPlot(apz.sc.n, features = c("nCount_RNA", "nFeature_RNA", "percent.mito"), sort = "increasing")
 ```
@@ -401,7 +405,7 @@ Cluster 8 expresses higher mitochondrial content, both glial and neuronal marker
 Having gone through one round of clustering and subsetting and clustering again, we have identified 2 clusters of nuclei that contain both neural and glial genes. Cluster 2 from the first round looking at all captured nuclei and cluster 8 from the neurons subsetting were identified as possible doublet droplets. Because we think these are technical artifacts we will remove them for final analysis. 
 
 ## All Nuclei of the AP 
-```{r}
+```{r all_cells_no_doublets}
 ap.clean <- subset(apz2.filtered, cells = colnames(apz2.filtered)[!colnames(apz2.filtered)%in%WhichCells(apz.sc, idents = 2)])
 ap.clean <- subset(apz2.filtered, cells = colnames(ap.clean)[!colnames(ap.clean)%in%WhichCells(apz.sc.n, idents = 8)])
 
@@ -418,7 +422,7 @@ There are `r length(colnames(ap.clean))` high quality nuclei. With `r length(Whi
 
 ## Libraries AP1 vs AP2
 
-```{r}
+```{r compare_libs_3}
 DimPlot(ap.clean, label = TRUE, group.by = "orig.ident") + labs(title = "AP All Nuclei", subtitle = "by library")
 freq_table <- prop.table(x = table(ap.clean@active.ident, ap.clean@meta.data$orig.ident), 
     margin = 2)
@@ -431,7 +435,7 @@ There is good representation of all cell types by both libraries.
 
 ## Cell Types
 
-```{r}
+```{r all_celltypes}
 plot_grid(
   FeaturePlot(ap.clean, features = c("Vim"), max.cutoff = 2) + NoLegend(),
   FeaturePlot(ap.clean, features = c("Cldn10"), max.cutoff = 2) + NoLegend(),
@@ -447,7 +451,7 @@ plot_grid(
   FeaturePlot(ap.clean, features = c("Gad2"), max.cutoff = 2) + NoLegend(),
   FeaturePlot(ap.clean, features = c("Slc17a6"), max.cutoff = 2), rel_widths = c(1,1.2))
 ```
-```{r}
+```{r rename_all_cells}
 ap.renamed <- ap.clean
 
 ap.renamed <- RenameIdents(ap.renamed, '1' = "Tanycyte")
@@ -491,6 +495,7 @@ ap.clean[["renamed"]] <- Idents(object = ap.renamed)
 plot_grid(
 DimPlot(ap.clean, group.by = "renamed", label = T) + NoLegend(),
 DimPlot(ap.clean, group.by = "renumbered", label = T), rel_widths = c(1,1.2))
+DimPlot(ap.clean,  group.by = "old.ident", label = T)
 ```
 ```{r}
 DotPlot(ap.renamed, features = c("Vim", "Cldn10", "Cfap52", "Rgs5", "Col3a1", "Olig2", "Csf1r", "Gad2", "Slc17a6") ) + theme(axis.title.x = element_blank(), axis.title.y = element_blank(), axis.text.x = element_text(angle = 90))
@@ -501,7 +506,7 @@ table(ap.renamed@active.ident)
 
 ## Neurons
 
-```{r}
+```{r all_neurons}
 ap.clean.n <- subset(ap.clean, cells = WhichCells(ap.clean, idents = c(2:5,7:9)))
 ap.clean.n <- SCTransform(ap.clean.n, verbose = FALSE, vars.to.regress = "reads")
 ap.clean.n <- RunPCA(ap.clean.n, verbose = FALSE)
@@ -516,7 +521,7 @@ DimPlot(ap.clean.n, label = TRUE) + labs(title = "All Neurons")
 ### Markers for All Neurons
 
 
-```{r}
+```{r neuron_markers}
 clean.markers <- FindAllMarkers(ap.clean.n, only.pos = T)
 top9.clean <- clean.markers %>% filter(pct.2 <.4) %>% group_by(cluster) %>% top_n(n = 9, wt = 1/p_val_adj) %>% arrange(pct.2, .by_group = T) 
 ```
@@ -595,24 +600,27 @@ FeaturePlot(ap.clean.n, features = top9.clean$gene[(9*i-8):(9*i)])
 
 Because these libraries were produced from disections of the AP contamination from the nearby NTS is to be expected. Using Allen ISH database we can use genes that appear in the NTS and not in the AP to distinguish contaminating neurons. 
 
-```{r}
-FeaturePlot(ap.clean.n, features = c("Trpc6", "Synpr","Cbln2"))
-FeaturePlot(ap.clean.n, features = c("Ecel1", "Penk","Chrm2"))
-```
+```{r nts_markers}
+FeaturePlot(ap.clean.n, features = c("Ramp3", "Slc6a2", "Prlhr", "Sntb1"), cols = c("light grey", "magenta"), pt.size = 1)
+FeaturePlot(ap.clean.n, features = c("Gpr83", "Bcat1", "Ntrk1"), cols = c("light grey", "magenta"), pt.size = 1)
+FeaturePlot(ap.clean.n, features = c("Trpc6", "Chrm2", "Synpr", "Ecel1"), cols = c("light grey", "limegreen"), pt.size = 1)
 
-```{r}
+nts_features <- list(c("Trpc6", "Chrm2", "Synpr", "Ecel1", "Cbln2"))
+ap.clean.n <- AddModuleScore(ap.clean.n, features = nts_features, name = "nts_features_score")
+FeaturePlot(ap.clean.n, features = "nts_features_score1", min.cutoff = 0, pt.size = 1.5)
+
+ap_features <- list(c("Ramp3", "Slc6a2", "Prlhr", "Sntb1", "Gpr83", "Bcat1", "Ntrk1"))
+ap.clean.n <- AddModuleScore(ap.clean.n, features = ap_features, name = "ap_features_score")
+FeaturePlot(ap.clean.n, features = "ap_features_score1", min.cutoff = 0, pt.size = 1.5)
+
 DimPlot(ap.clean.n, cells.highlight = WhichCells(ap.clean.n, idents = c(3,5,8)), pt.size = 1) + 
   scale_color_manual(labels = c("AP", "NTS"), values = c("magenta", "limegreen")) +
   labs(title = "All Neurons from AP Dissection", subtitle = "NTS contamination")
-
-FeaturePlot(ap.clean.n, features = c("Ramp3", "Slc6a2", "Prlhr", "Sntb1"), cols = c("light grey", "magenta"), pt.size = 1)
-FeaturePlot(ap.clean.n, features = c("Gpr83", "Bcat1", "Ntrk1"), cols = c("light grey", "magenta"), pt.size = 1)
-FeaturePlot(ap.clean.n, features = c("Trpc6", "Chrm2", "Synpr"), cols = c("light grey", "limegreen"), pt.size = 1)
 ```
 
 ## AP only Neurons (no NTS)
 
-```{r}
+```{r nts_removed}
 no_nts <- subset(apz2.filtered, cells = WhichCells(ap.clean.n, idents = c(0,1,2,4,6,7,9)))
 no_nts <- SCTransform(no_nts, verbose = FALSE, vars.to.regress = "reads")
 no_nts <- RunPCA(no_nts, verbose = FALSE)
@@ -627,23 +635,27 @@ DimPlot(no_nts, label = TRUE) + labs(title = "AP Neurons", subtitle = paste0("NT
 
 ### Markers
 
-```{r,  fig.height = 10}
+```{r heatmap,  fig.height = 10}
 no_nts.rename <- RenameIdents(no_nts, 
-                          '0' = '4_GABA', '3' = '5_GABA', '5' = '6_GABA', 
-                          '1' = '0_GLUT', '2' = '1_GLUT', '4' = '2_GLUT', '6' = '3_GLUT')
+                          '0' = '5_GABA', '3' = '6_GABA', '5' = '7_GABA', 
+                          '1' = '1_GLUT', '2' = '2_GLUT', '4' = '3_GLUT', '6' = '4_GLUT')
 
 
 no_nts.rename@active.ident <- factor(x = no_nts.rename@active.ident, levels = sort(levels(no_nts.rename))) 
-no_nts.rename.markers <- FindAllMarkers(no_nts.rename, only.pos = T)
 
-top10 <- no_nts.rename.markers %>% filter(pct.2 <.125) %>% group_by(cluster) %>% top_n(n = 10, wt = 1/p_val_adj) %>% arrange(pct.2, .by_group = T) 
+no_nts[["paper"]] <- Idents(object = no_nts.rename)
 
-DoHeatmap(no_nts.rename, features = top10$gene) + 
+no_nts <- SetIdent(no_nts, value = "paper")
+
+no_nts.markers <- FindAllMarkers(no_nts, only.pos = T)
+
+top10 <- no_nts.markers %>% filter(pct.2 <.125) %>% group_by(cluster) %>% top_n(n = 10, wt = 1/p_val_adj) %>% arrange(pct.2, .by_group = T) 
+
+DoHeatmap(no_nts, features = top10$gene) + 
     scale_fill_gradientn(colors = c("azure4", "ghostwhite", "purple")) + 
     guides(color = FALSE)
-```
-```{r}
-DimPlot(no_nts.rename, label = T)
+
+DimPlot(no_nts, label = T)
 ```
 
 # FeaturePlots in the Paper
@@ -679,12 +691,24 @@ FeaturePlot(ap.clean.n, features =c("Glp1r"))
 FeaturePlot(ap.clean.n, features =c("Prlhr"))
 ```
 
-```{r, include=F}
-#setwd("D:/scRNA/AP/zUMI_2_bc")
-#save(apz.sc.n2, file = "ap.neurons.Rdata")
-#save(apz.sc, file = "ap.cells.Rdata")
-#save(ap.clean, file = "AP_NoDoublets.Rdata")
-#save(ap.clean.n, file = "AP_Neurons_NoDoublets.Rdata")
+# Description of final objects
+
+```{r remove}
+rm(ap1, ap1.mat, ap1.rds, ap1.sym, ap2, ap2.mat, ap2.rds, ap2.sym, apz.sc, apz.sc.n, apz2, apz2.filtered, apz2.filtered_bc, apz2.polyg, ap_features, nts_features, p1, p2, p3, p4, p5, p6, p7, p8, top10, top9.clean, no_nts.rename, ap.renumbered, ap.renamed, ap.renumbered, no_nts.rename)
+rm(ap.cells, ap.genes, ap1.ensembl, ap1.genes, ap1.na, ap2.ensembl, ap2.genes, ap2.na, bc.list, bc.rc, dims, dups, dups2, freq_table, glia.genes, i, mito.genes, n.clusters, names, neuro.genes, percent.glia, percent.mito, percent.neuro, reads, whitelist, apz2.remove)
+
+rm(clean.markers, no_nts.rename.markers)
+
 ```
+After removing all intermediate objects and values, your workspace will have:
+
+`ap.clean`
+A seurat object with all cells from the AP disection including glia and neurons from the AP as well as some contamination from the NTS. It will be clean of bad barcodes, doublets, and bad quality nuclei. Processed with SCTransform.
+
+`ap.clean.n`
+A seurat object that contains all neurons from the AP disection (AP as well as some contamination from the NTS). It has been processed with SCTransform.
+
+`no_nts`
+A seurat object with only neurons from the AP processed with SCTransform.
 
 
