@@ -259,7 +259,7 @@ We will remove `r length(apz2.remove)` barcodes. Of these barcodes, `r length(ap
 
 Examine nuclei with bad barcodes that are to be removed: 
 
-````{r removed_cells}
+```{r removed_cells}
 apz2.polyg <- subset(apz2, cells = apz2.remove)
 VlnPlot(object = apz2.polyg, features = c("reads", "nCount_RNA", "nFeature_RNA", "complexity"), ncol=4)
 VlnPlot(object = apz2.polyg, features = c("percent.mito", "percent.neuro", "percent.glia"))
